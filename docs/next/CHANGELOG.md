@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Fixed
+- OpenCode 2 panes now restore with `opencode2 --session <id>` instead of `opencode --session <id>`, which failed with "Session not found" because the two CLIs do not share session storage. Reinstall the OpenCode integration to apply.
+
 ## [0.9.0] - 2026-09-07
 
 ### Added

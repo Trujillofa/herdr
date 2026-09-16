@@ -190,6 +190,15 @@ pub fn plan(source: &str, agent: &str, session_ref: &AgentSessionRef) -> Option<
                 session_ref.value.clone(),
             ]
         }
+        // OpenCode 2 cannot open v1 sessions and v1 cannot open OpenCode 2
+        // sessions, so resume with the CLI that reported the session.
+        ("herdr:opencode2", "opencode", AgentSessionRefKind::Id) => {
+            vec![
+                "opencode2".into(),
+                "--session".into(),
+                session_ref.value.clone(),
+            ]
+        }
         ("herdr:qodercli", "qodercli", AgentSessionRefKind::Id) => {
             vec![
                 "qodercli".into(),
@@ -276,6 +285,7 @@ pub(crate) fn is_official_agent_source(source: &str, agent: &str) -> bool {
             | ("herdr:pi", "pi")
             | ("herdr:hermes", "hermes")
             | ("herdr:opencode", "opencode")
+            | ("herdr:opencode2", "opencode")
             | ("herdr:qodercli", "qodercli")
             | ("herdr:qwen", "qwen")
             | ("herdr:kilo", "kilo")
@@ -468,6 +478,16 @@ mod tests {
             .unwrap()
             .argv,
             vec!["opencode", "--session", "opencode-session"]
+        );
+        assert_eq!(
+            plan(
+                "herdr:opencode2",
+                "opencode",
+                &AgentSessionRef::id("opencode2-session").unwrap()
+            )
+            .unwrap()
+            .argv,
+            vec!["opencode2", "--session", "opencode2-session"]
         );
         assert_eq!(
             plan(

@@ -902,8 +902,10 @@ impl TerminalState {
                 .as_ref()
                 .is_none_or(|incoming| incoming == anchored)
         });
-        let opencode_cross_talk = (source, agent_label) == ("herdr:opencode", "opencode")
-            && process_present
+        let opencode_cross_talk = matches!(
+            (source, agent_label),
+            ("herdr:opencode" | "herdr:opencode2", "opencode")
+        ) && process_present
             && anchored_session_ref
                 .zip(session_ref.as_ref())
                 .is_some_and(|(anchored, incoming)| anchored != incoming);
@@ -1334,7 +1336,11 @@ impl TerminalState {
                 Some("startup" | "clear" | "resume" | "compact")
             ) | ("herdr:mastracode", "mastracode", Some("startup"))
                 | ("herdr:hermes", "hermes", Some("startup" | "new" | "resume"))
-                | ("herdr:opencode", "opencode", Some("select"))
+                | (
+                    "herdr:opencode" | "herdr:opencode2",
+                    "opencode",
+                    Some("select")
+                )
                 | ("herdr:pi", "pi", Some("new" | "resume" | "fork"))
                 | ("herdr:grok", "grok", Some("new"))
                 | (
@@ -1364,8 +1370,15 @@ impl TerminalState {
         session_start_source: Option<&str>,
         seq: Option<u64>,
     ) -> bool {
-        (source, agent_label, session_start_source, seq)
-            == ("herdr:opencode", "opencode", Some("select"), None)
+        matches!(
+            (source, agent_label, session_start_source, seq),
+            (
+                "herdr:opencode" | "herdr:opencode2",
+                "opencode",
+                Some("select"),
+                None
+            )
+        )
     }
 
     pub fn set_persisted_agent_session(

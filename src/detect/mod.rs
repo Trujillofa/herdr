@@ -331,6 +331,7 @@ pub(crate) fn full_lifecycle_hook_authority(source: &str, agent_label: &str) -> 
             | ("herdr:omp", "omp")
             | ("herdr:mastracode", "mastracode")
             | ("herdr:opencode", "opencode")
+            | ("herdr:opencode2", "opencode")
             | ("herdr:kilo", "kilo")
             | ("herdr:kimi", "kimi")
     )

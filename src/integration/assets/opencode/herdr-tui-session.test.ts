@@ -129,6 +129,7 @@ test("reports a root session when only the local route changes", async () => {
   expect(requestParam(requests[0], "agent_session_id")).toBe("session-a");
   expect(requestParam(requests[0], "session_start_source")).toBe("select");
   expect(requestParam(requests[0], "seq")).toBeUndefined();
+  expect(requestParam(requests[0], "source")).toBe("herdr:opencode");
 });
 
 test("retries an initial selection while Herdr detects the process", async () => {
@@ -256,6 +257,16 @@ test("V2 ignores events without data", async () => {
   tui.emit("session.execution.started", { sessionID: "a" });
   await flushReports();
   expect(states()).toEqual(["working"]);
+});
+
+test("V2 reports as herdr:opencode2 so restore uses the OpenCode 2 CLI", async () => {
+  const plugin = await loadPlugin();
+  const tui = v2Api();
+  const dispose = await plugin.setup(tui.api);
+  activeDisposers.push(dispose);
+  await flushReports();
+  expect(requests.length).toBeGreaterThan(0);
+  expect(requests.every((r) => requestParam(r, "source") === "herdr:opencode2")).toBe(true);
 });
 
 test("V2 completes and interrupts without legacy idle events", async () => {

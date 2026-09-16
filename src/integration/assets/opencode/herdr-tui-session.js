@@ -5,12 +5,15 @@
 
 import net from "node:net";
 
-const SOURCE = "herdr:opencode";
+const SOURCE_V1 = "herdr:opencode";
+// OpenCode 2 keeps sessions in a store v1 cannot open, so restore must know
+// which CLI reported a session. Only OpenCode 2 calls `setup`.
+const SOURCE_V2 = "herdr:opencode2";
 const AGENT = "opencode";
 const ROUTE_POLL_INTERVAL_MS = 100;
 const SELECTION_RETRY_DELAYS_MS = [100, 400, 1_000];
 
-function requestOnce(sessionID, state, seq, isCurrent = () => true) {
+function requestOnce(source, sessionID, state, seq, isCurrent = () => true) {
   const paneId = process.env.HERDR_PANE_ID;
   const socketPath = process.env.HERDR_SOCKET_PATH;
   if (!paneId || !socketPath) {
@@ -20,13 +23,13 @@ function requestOnce(sessionID, state, seq, isCurrent = () => true) {
   const socketEndpoint =
     process.platform === "win32" ? `\\\\.\\pipe\\${socketPath}` : socketPath;
   const request = {
-    id: `${SOURCE}:tui:${Date.now()}:${Math.floor(Math.random() * 1_000_000)
+    id: `${source}:tui:${Date.now()}:${Math.floor(Math.random() * 1_000_000)
       .toString()
       .padStart(6, "0")}`,
     method: state === undefined ? "pane.report_agent_session" : "pane.report_agent",
     params: {
       pane_id: paneId,
-      source: SOURCE,
+      source,
       agent: AGENT,
       agent_session_id: sessionID,
       ...(state === undefined ? { session_start_source: "select" } : { state, seq }),
@@ -105,7 +108,7 @@ export default {
       const reportingSessionID = sessionID;
       reportPending = true;
       try {
-        await requestOnce(reportingSessionID);
+        await requestOnce(SOURCE_V1, reportingSessionID);
       } catch {
         // Best-effort reporting retries below while the selected route remains active.
       } finally {
@@ -169,7 +172,7 @@ function setup(api) {
     const isCurrent = () => !disposed && revision === generation && !!sessionID && current() === sessionID;
     chain = chain.then(async () => {
       if (!isCurrent()) return;
-      const delivered = await requestOnce(sessionID, value, value === undefined ? undefined : ++sequence, isCurrent);
+      const delivered = await requestOnce(SOURCE_V2, sessionID, value, value === undefined ? undefined : ++sequence, isCurrent);
       if (!delivered) scheduleStateRetry();
     }).catch(() => {});
   }
