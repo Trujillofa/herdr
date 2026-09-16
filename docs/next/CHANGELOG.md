@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- Added Command Code agent detection, including after it renames its process to the conversation title. Idle Command Code panes are recognized from the prompt footer, and panes restore with `command-code --continue` in their saved directory.
+
 ## [0.9.0] - 2026-09-07
 
 ### Added

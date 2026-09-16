@@ -65,10 +65,11 @@ pub enum Agent {
     Letta,
     Maki,
     Muse,
+    CommandCode,
 }
 
 impl Agent {
-    pub const ALL: [Self; 24] = [
+    pub const ALL: [Self; 25] = [
         Self::Pi,
         Self::Claude,
         Self::Codex,
@@ -93,9 +94,10 @@ impl Agent {
         Self::Letta,
         Self::Maki,
         Self::Muse,
+        Self::CommandCode,
     ];
 
-    pub const SCREEN_MANIFEST_AGENTS: [Self; 22] = [
+    pub const SCREEN_MANIFEST_AGENTS: [Self; 23] = [
         Self::Pi,
         Self::Claude,
         Self::Codex,
@@ -118,6 +120,7 @@ impl Agent {
         Self::Letta,
         Self::Maki,
         Self::Muse,
+        Self::CommandCode,
     ];
 }
 
@@ -147,6 +150,7 @@ pub fn agent_label(agent: Agent) -> &'static str {
         Agent::Letta => "letta",
         Agent::Maki => "maki",
         Agent::Muse => "muse",
+        Agent::CommandCode => "command-code",
     }
 }
 
@@ -182,6 +186,7 @@ pub fn interactive_agent_executable(agent: Agent) -> &'static str {
         Agent::Letta => "letta",
         Agent::Maki => "maki",
         Agent::Muse => "muse",
+        Agent::CommandCode => "command-code",
     }
 }
 
@@ -222,6 +227,7 @@ fn lookup_agent(name: &str) -> Option<Agent> {
         "letta" | "letta-code" | "letta code" => Some(Agent::Letta),
         "maki" => Some(Agent::Maki),
         "muse" | "muse-code" | "muse-cli" => Some(Agent::Muse),
+        "command-code" | "commandcode" | "cmdc" | "command code" => Some(Agent::CommandCode),
         _ if is_muse_versioned_binary(name) => Some(Agent::Muse),
         _ => None,
     }
@@ -364,6 +370,24 @@ pub fn foreground_group_leader_job(
     crate::platform::foreground_group_leader_job(process_group_id)
 }
 
+/// Command Code rewrites its process title to `⌘ Command Code · <conversation>`
+/// right after startup, so neither the executable name nor argv names the
+/// binary. Linux truncates the kernel name to 15 bytes (`⌘ Command Cod`).
+fn is_command_code_process_title(process: &crate::platform::ForegroundProcess) -> bool {
+    let rewritten = |value: &str| {
+        value
+            .trim_start()
+            .to_lowercase()
+            .starts_with("⌘ command cod")
+    };
+    rewritten(&process.name)
+        || process
+            .argv
+            .as_deref()
+            .and_then(|argv| argv.first())
+            .is_some_and(|argv0| rewritten(argv0))
+}
+
 /// Get the foreground process group for a pane shell PID.
 /// This is cheaper than collecting every process in the foreground job.
 pub fn foreground_process_group_id(child_pid: u32) -> Option<u32> {
@@ -371,6 +395,9 @@ pub fn foreground_process_group_id(child_pid: u32) -> Option<u32> {
 }
 
 fn normalized_process_name(process: &crate::platform::ForegroundProcess) -> String {
+    if is_command_code_process_title(process) {
+        return agent_label(Agent::CommandCode).to_string();
+    }
     let effective = process.argv0.as_deref().unwrap_or(&process.name);
     let lower_effective = effective.to_lowercase();
 
@@ -942,6 +969,9 @@ mod tests {
         assert_eq!(identify_agent("Letta Code"), Some(Agent::Letta));
         assert_eq!(identify_agent("maki"), Some(Agent::Maki));
         assert_eq!(identify_agent("muse"), Some(Agent::Muse));
+        assert_eq!(identify_agent("command-code"), Some(Agent::CommandCode));
+        assert_eq!(identify_agent("cmdc"), Some(Agent::CommandCode));
+        assert_eq!(identify_agent("cmd"), None);
         assert_eq!(identify_agent("muse-code"), Some(Agent::Muse));
         assert_eq!(identify_agent("muse-cli"), Some(Agent::Muse));
         assert_eq!(identify_agent("muse-bin-0.1.0-R708.1"), Some(Agent::Muse));
@@ -1027,6 +1057,7 @@ mod tests {
             (Agent::Letta, "letta"),
             (Agent::Maki, "maki"),
             (Agent::Muse, "muse"),
+            (Agent::CommandCode, "command-code"),
         ];
         assert_eq!(expected.len(), Agent::ALL.len());
         for (agent, executable) in expected {
@@ -1717,6 +1748,24 @@ Enter to select · Esc to cancel"#;
         };
 
         assert_eq!(identify_agent_in_job(&job), None);
+    }
+
+    #[test]
+    fn identify_agent_in_job_detects_command_code_rewritten_title() {
+        // Evidence: Command Code 1.54.1 on Linux reports this name and argv.
+        let job = crate::platform::ForegroundJob {
+            process_group_id: 123,
+            processes: vec![foreground_process(
+                123,
+                "⌘ Command Cod",
+                &["⌘ Command Code · my/project"],
+            )],
+        };
+
+        assert_eq!(
+            identify_agent_in_job(&job),
+            Some((Agent::CommandCode, "command-code".to_string()))
+        );
     }
 
     #[test]

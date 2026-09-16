@@ -262,6 +262,25 @@ pub fn dedupe_key(source: &str, agent: &str, session_ref: &AgentSessionRef) -> S
     )
 }
 
+/// Agents without a session integration whose CLI can reopen the latest
+/// conversation for a directory with `--continue`.
+pub fn continue_agent_label(agent: crate::detect::Agent) -> Option<&'static str> {
+    matches!(agent, crate::detect::Agent::CommandCode).then(|| crate::detect::agent_label(agent))
+}
+
+/// `--continue` is scoped to a directory, so panes only dedupe within one cwd.
+pub fn continue_plan(agent: &str, cwd: &Path) -> Option<AgentResumePlan> {
+    let argv = match crate::detect::parse_canonical_agent_label(agent)? {
+        crate::detect::Agent::CommandCode => vec!["command-code".into(), "--continue".into()],
+        _ => return None,
+    };
+    Some(AgentResumePlan {
+        agent: agent.to_string(),
+        argv,
+        dedupe_key: format!("continue\u{0}{agent}\u{0}{}", cwd.display()),
+    })
+}
+
 pub(crate) fn is_official_agent_source(source: &str, agent: &str) -> bool {
     matches!(
         (source, agent),
@@ -307,6 +326,25 @@ mod tests {
             .join(name)
             .display()
             .to_string()
+    }
+
+    #[test]
+    fn continue_plan_only_covers_agents_without_session_integration() {
+        let plan = continue_plan("command-code", Path::new("/work/a")).unwrap();
+        assert_eq!(plan.argv, vec!["command-code", "--continue"]);
+        assert_ne!(
+            plan.dedupe_key,
+            continue_plan("command-code", Path::new("/work/b"))
+                .unwrap()
+                .dedupe_key
+        );
+        assert!(continue_plan("opencode", Path::new("/work/a")).is_none());
+        assert!(continue_plan("cmdc", Path::new("/work/a")).is_none());
+        assert_eq!(
+            continue_agent_label(crate::detect::Agent::CommandCode),
+            Some("command-code")
+        );
+        assert_eq!(continue_agent_label(crate::detect::Agent::Claude), None);
     }
 
     #[test]

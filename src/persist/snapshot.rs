@@ -107,6 +107,10 @@ pub struct PaneSnapshot {
     pub agent_session: Option<PaneAgentSessionSnapshot>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub launch_argv: Option<Vec<String>>,
+    /// Agent that ran without a resumable session reference but can reopen
+    /// its latest conversation for this cwd with its own `--continue`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub continue_agent: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -363,6 +367,14 @@ fn capture_tab(
                 label,
                 agent_name,
                 managed_agent_kind,
+                continue_agent: agent_session
+                    .is_none()
+                    .then(|| {
+                        terminal.and_then(crate::terminal::TerminalState::effective_known_agent)
+                    })
+                    .flatten()
+                    .and_then(crate::agent_resume::continue_agent_label)
+                    .map(str::to_string),
                 agent_session,
                 launch_argv,
             },
@@ -557,6 +569,36 @@ mod tests {
     }
 
     #[test]
+    fn capture_persists_continue_agent_only_for_agents_without_session_integration() {
+        let mut state = state_with_workspaces(&["continue-agent"]);
+        let root = state.workspaces[0].tabs[0].root_pane;
+        let terminal_id = state.workspaces[0].tabs[0].panes[&root]
+            .attached_terminal_id
+            .clone();
+        let terminal = state.terminals.get_mut(&terminal_id).unwrap();
+        terminal.set_detected_state(
+            Some(crate::detect::Agent::CommandCode),
+            crate::detect::AgentState::Idle,
+        );
+
+        let snap = capture_from_state(&state);
+        let pane = &snap.workspaces[0].tabs[0].panes[&root.raw()];
+        assert_eq!(pane.continue_agent.as_deref(), Some("command-code"));
+        assert_eq!(pane.agent_session, None);
+
+        let terminal = state.terminals.get_mut(&terminal_id).unwrap();
+        terminal.set_detected_state(
+            Some(crate::detect::Agent::Claude),
+            crate::detect::AgentState::Idle,
+        );
+        let snap = capture_from_state(&state);
+        assert_eq!(
+            snap.workspaces[0].tabs[0].panes[&root.raw()].continue_agent,
+            None
+        );
+    }
+
+    #[test]
     fn managed_agent_snapshot_omits_pending_and_persists_active_ownership() {
         let mut state = state_with_workspaces(&["managed-snapshot"]);
         let root = state.workspaces[0].tabs[0].root_pane;
@@ -646,6 +688,7 @@ mod tests {
                 managed_agent_kind: None,
                 agent_session: None,
                 launch_argv: None,
+                continue_agent: None,
             },
         );
         panes.insert(
@@ -657,6 +700,7 @@ mod tests {
                 managed_agent_kind: None,
                 agent_session: None,
                 launch_argv: None,
+                continue_agent: None,
             },
         );
 
@@ -1210,6 +1254,7 @@ mod tests {
                 managed_agent_kind: None,
                 agent_session: None,
                 launch_argv: None,
+                continue_agent: None,
             },
         );
         panes.insert(
@@ -1223,6 +1268,7 @@ mod tests {
                 managed_agent_kind: None,
                 agent_session: None,
                 launch_argv: None,
+                continue_agent: None,
             },
         );
 

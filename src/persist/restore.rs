@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ratatui::layout::Direction;
@@ -473,7 +473,8 @@ fn restore_tab(
             .map(|p| p.cwd.clone())
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| "/".into()));
 
-        let cwd = if saved_cwd.exists() {
+        let saved_cwd_exists = saved_cwd.exists();
+        let cwd = if saved_cwd_exists {
             saved_cwd
         } else {
             warn!(
@@ -504,7 +505,18 @@ fn restore_tab(
                 enabled: runtime_context.resume_agents_on_restore,
                 resumed_sessions: resumed_agent_sessions,
             };
-            pane_restore_startup(saved_agent_session, saved_history, &mut agent_restore)
+            // `--continue` picks the latest conversation for a directory, so it
+            // must not run in the HOME fallback for a vanished cwd.
+            let continue_agent = saved_pane
+                .and_then(|pane| pane.continue_agent.as_deref())
+                .filter(|_| saved_cwd_exists)
+                .map(|agent| (agent, cwd.as_path()));
+            pane_restore_startup(
+                saved_agent_session,
+                continue_agent,
+                saved_history,
+                &mut agent_restore,
+            )
         };
         let restored_agent_session =
             restored_terminal_agent_session(saved_agent_session, startup.duplicate_agent_session);
@@ -738,6 +750,7 @@ fn restore_tab(
 
 fn pane_restore_startup<'a>(
     session: Option<&PaneAgentSessionSnapshot>,
+    continue_agent: Option<(&str, &Path)>,
     history: Option<&'a PaneHistorySnapshot>,
     agent_restore: &mut AgentRestoreState<'_>,
 ) -> PaneRestoreStartup<'a> {
@@ -745,8 +758,15 @@ fn pane_restore_startup<'a>(
     // resumable agent session and resume is enabled, do not replay saved pane
     // presentation history into that terminal, even when this pane is a
     // duplicate suppressed by session de-duplication.
-    let restore_plan =
-        session.and_then(|session| restore_plan_for_snapshot(session, agent_restore.enabled));
+    let restore_plan = session
+        .and_then(|session| restore_plan_for_snapshot(session, agent_restore.enabled))
+        .or_else(|| {
+            agent_restore
+                .enabled
+                .then_some(continue_agent)
+                .flatten()
+                .and_then(|(agent, cwd)| crate::agent_resume::continue_plan(agent, cwd))
+        });
     let has_native_agent_restore = restore_plan.is_some();
     // Reserve before spawning so later panes in the same restore pass cannot
     // launch the same native agent session. The caller rolls this reservation
@@ -1075,7 +1095,8 @@ mod tests {
             resumed_sessions: &mut resumed,
         };
 
-        let startup = pane_restore_startup(Some(&session), Some(&history), &mut agent_restore);
+        let startup =
+            pane_restore_startup(Some(&session), None, Some(&history), &mut agent_restore);
 
         assert!(startup.restore_plan.is_some());
         assert!(startup.initial_history_ansi.is_none());
@@ -1100,8 +1121,9 @@ mod tests {
             resumed_sessions: &mut resumed,
         };
 
-        let first = pane_restore_startup(Some(&session), Some(&history), &mut agent_restore);
-        let duplicate = pane_restore_startup(Some(&session), Some(&history), &mut agent_restore);
+        let first = pane_restore_startup(Some(&session), None, Some(&history), &mut agent_restore);
+        let duplicate =
+            pane_restore_startup(Some(&session), None, Some(&history), &mut agent_restore);
 
         assert!(first.restore_plan.is_some());
         assert!(first.initial_history_ansi.is_none());
@@ -1128,11 +1150,79 @@ mod tests {
             resumed_sessions: &mut resumed,
         };
 
-        let startup = pane_restore_startup(Some(&session), Some(&history), &mut agent_restore);
+        let startup =
+            pane_restore_startup(Some(&session), None, Some(&history), &mut agent_restore);
 
         assert!(startup.restore_plan.is_none());
         assert_eq!(startup.initial_history_ansi, Some("RESTORED_HISTORY\r\n"));
         assert!(!startup.duplicate_agent_session);
+        assert!(resumed.is_empty());
+    }
+
+    #[test]
+    fn pane_restore_startup_continues_command_code_once_per_cwd() {
+        let history = super::super::snapshot::PaneHistorySnapshot {
+            ansi: "RESTORED_HISTORY\r\n".into(),
+            lines: 1,
+        };
+        let mut resumed = HashSet::new();
+        let mut agent_restore = AgentRestoreState {
+            enabled: true,
+            resumed_sessions: &mut resumed,
+        };
+        let project_a = Path::new("/work/a");
+        let project_b = Path::new("/work/b");
+
+        let first = pane_restore_startup(
+            None,
+            Some(("command-code", project_a)),
+            Some(&history),
+            &mut agent_restore,
+        );
+        let other_cwd = pane_restore_startup(
+            None,
+            Some(("command-code", project_b)),
+            Some(&history),
+            &mut agent_restore,
+        );
+        let duplicate = pane_restore_startup(
+            None,
+            Some(("command-code", project_a)),
+            Some(&history),
+            &mut agent_restore,
+        );
+
+        assert_eq!(
+            first.restore_plan.unwrap().argv,
+            vec!["command-code", "--continue"]
+        );
+        assert!(first.initial_history_ansi.is_none());
+        assert!(other_cwd.restore_plan.is_some());
+        assert!(duplicate.restore_plan.is_none());
+        assert!(duplicate.duplicate_agent_session);
+    }
+
+    #[test]
+    fn pane_restore_startup_ignores_continue_agent_when_resume_is_disabled() {
+        let history = super::super::snapshot::PaneHistorySnapshot {
+            ansi: "RESTORED_HISTORY\r\n".into(),
+            lines: 1,
+        };
+        let mut resumed = HashSet::new();
+        let mut agent_restore = AgentRestoreState {
+            enabled: false,
+            resumed_sessions: &mut resumed,
+        };
+
+        let startup = pane_restore_startup(
+            None,
+            Some(("command-code", Path::new("/work/a"))),
+            Some(&history),
+            &mut agent_restore,
+        );
+
+        assert!(startup.restore_plan.is_none());
+        assert_eq!(startup.initial_history_ansi, Some("RESTORED_HISTORY\r\n"));
         assert!(resumed.is_empty());
     }
 
@@ -1198,6 +1288,7 @@ mod tests {
                                 value: "opencode-session".into(),
                             }),
                             launch_argv: None,
+                            continue_agent: None,
                         },
                     )]),
                     zoomed: false,
@@ -1279,6 +1370,7 @@ mod tests {
                                 managed_agent_kind: None,
                                 agent_session: None,
                                 launch_argv: None,
+                                continue_agent: None,
                             },
                         ),
                         (
@@ -1290,6 +1382,7 @@ mod tests {
                                 managed_agent_kind: None,
                                 agent_session: None,
                                 launch_argv: None,
+                                continue_agent: None,
                             },
                         ),
                     ]),
@@ -1343,6 +1436,7 @@ mod tests {
                     managed_agent_kind: None,
                     agent_session: None,
                     launch_argv: None,
+                    continue_agent: None,
                 },
             )
         };
@@ -1358,6 +1452,7 @@ mod tests {
                 value: "codex-session".into(),
             }),
             launch_argv: None,
+            continue_agent: None,
         };
         let snapshot = SessionSnapshot {
             version: super::super::snapshot::SNAPSHOT_VERSION,
@@ -1509,6 +1604,7 @@ mod tests {
                                 value: "codex-session".into(),
                             }),
                             launch_argv: None,
+                            continue_agent: None,
                         },
                     )]),
                     zoomed: false,
@@ -1670,6 +1766,7 @@ mod tests {
                 managed_agent_kind: None,
                 agent_session: None,
                 launch_argv: None,
+                continue_agent: None,
             },
         );
         let history = SessionHistorySnapshot {

@@ -1,0 +1,22 @@
+id = "command-code"
+version = "2026.09.16.1"
+min_engine_version = 1
+updated_at = "2026-09-16T00:00:00Z"
+
+# Evidence: Command Code 1.54.1 live pane read with `--source detection`.
+# The idle input box is followed by a footer below its last horizontal rule:
+#   "? for shortcuts · taste on"   (or "taste off" when taste is disabled)
+# Opening the slash-command menu replaces that footer with the command list,
+# so the footer only matches while the empty or drafted prompt is idle.
+
+[[rules]]
+id = "taste_footer_idle"
+state = "idle"
+priority = 50
+region = "after_last_horizontal_rule"
+visible_idle = true
+contains = ["? for shortcuts"]
+any = [
+  { contains = ["taste on"] },
+  { contains = ["taste off"] },
+]

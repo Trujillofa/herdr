@@ -93,6 +93,8 @@ Unsupported, missing, invalid, duplicated, or stale session references restore a
 
 If native agent session restore applies to a pane, Herdr resumes the agent session instead of replaying saved pane history for that pane.
 
+Command Code has no session integration. When a pane was running Command Code and its saved directory still exists, Herdr restores it with `command-code --continue`, which reopens the latest conversation for that directory. Only one pane per directory is continued.
+
 ## Live handoff
 
 Live handoff is for update and remote attach flows that need to replace a running Herdr server. It asks the old server to transfer live panes to the new server, so pane processes can keep running across the server replacement.
