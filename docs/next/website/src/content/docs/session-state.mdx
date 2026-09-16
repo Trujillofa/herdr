@@ -26,6 +26,8 @@ herdr
 
 This is the strongest persistence path because the original processes never stop.
 
+On Linux with systemd, the detached server also survives closing the host terminal or systemd-oomd killing that terminal's scope. The server moves into its own `herdr-server*.scope`, which systemd-oomd omits from its kill candidates. The TUI exits with the window; panes keep running in the server. Run `herdr` again to reattach.
+
 ## Snapshot restore
 
 If the Herdr server stops and starts again, the original pane processes are gone. Herdr restores the saved session shape: workspaces, tabs, panes, cwd, layout, and focus.

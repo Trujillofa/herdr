@@ -25,6 +25,9 @@ pub(crate) use super::unix_common::{
 
 #[cfg(test)]
 mod config_file_tests;
+mod server_scope;
+
+pub(crate) use server_scope::prepare_server_process;
 
 const WSL_MARKER_ENV_VARS: &[&str] = &["WSL_DISTRO_NAME", "WSL_INTEROP"];
 const PROCESS_DETECTION_ENV_VAR: &str = "HERDR_PROCESS_DETECTION";

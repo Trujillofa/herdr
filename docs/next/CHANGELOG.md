@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Fixed
+- On Linux with systemd, a detached Herdr server now moves out of the launching terminal's scope into its own `herdr-server*.scope`, which systemd-oomd will not kill. Closing the terminal, or oomd killing it, no longer takes the server and its panes down with it.
+
 ## [0.9.0] - 2026-09-07
 
 ### Added
