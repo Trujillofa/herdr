@@ -12,16 +12,31 @@ enum SessionSaveJob {
 
 impl App {
     pub(super) fn schedule_session_save(&mut self) {
-        if self.policy.persist_session {
-            self.pane_exit_checkpoint_pending = false;
-            self.session_save_deadline = Some(Instant::now() + SESSION_SAVE_DEBOUNCE);
+        if !self.policy.persist_session {
+            return;
         }
+        self.pane_exit_checkpoint_pending = false;
+        // Never push an already-sooner deadline later; an urgent save may
+        // already be due.
+        let candidate = Instant::now() + SESSION_SAVE_DEBOUNCE;
+        self.session_save_deadline = Some(match self.session_save_deadline {
+            Some(existing) if existing <= candidate => existing,
+            _ => candidate,
+        });
     }
 
     pub(crate) fn sync_session_save_schedule(&mut self) {
-        if self.state.session_dirty {
-            self.state.session_dirty = false;
+        if !self.state.session_dirty {
+            return;
+        }
+        let urgent = self.state.session_save_urgent;
+        self.state.session_dirty = false;
+        self.state.session_save_urgent = false;
+        if !urgent {
             self.schedule_session_save();
+        } else if self.policy.persist_session {
+            self.pane_exit_checkpoint_pending = false;
+            self.session_save_deadline = Some(Instant::now());
         }
     }
 
@@ -107,11 +122,13 @@ impl App {
         self.save_session_now();
         self.pane_exit_checkpoint_pending = true;
         self.state.session_dirty = false;
+        self.state.session_save_urgent = false;
     }
 
     pub(crate) fn finish_checkpointed_pane_exit(&mut self) {
         if self.pane_exit_checkpoint_pending {
             self.state.session_dirty = false;
+            self.state.session_save_urgent = false;
             self.session_save_deadline = Some(Instant::now() + SESSION_SAVE_DEBOUNCE);
         }
     }

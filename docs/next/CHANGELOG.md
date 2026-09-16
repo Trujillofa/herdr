@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Fixed
+- Native agent session IDs are now saved on the next save tick instead of after the 5-second debounce, so a killed Herdr server no longer loses the resume handle for a newly started agent session.
+
 ## [0.9.0] - 2026-09-07
 
 ### Added

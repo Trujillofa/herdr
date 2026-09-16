@@ -886,6 +886,9 @@ pub struct AppState {
     pub(crate) host_cell_size: crate::kitty_graphics::HostCellSize,
     /// Set when a persisted session snapshot would change.
     pub session_dirty: bool,
+    /// Set with `session_dirty` when the next save must not wait for debounce
+    /// (native agent session ids). SIGKILL otherwise drops the resume handle.
+    pub session_save_urgent: bool,
     /// Terminal runtimes that should be shut down by the app/runtime layer
     /// after state has detached their terminal metadata.
     pub(crate) terminal_runtime_shutdowns: Vec<crate::terminal::TerminalId>,
@@ -894,6 +897,11 @@ pub struct AppState {
 impl AppState {
     pub(crate) fn mark_session_dirty(&mut self) {
         self.session_dirty = true;
+    }
+
+    pub(crate) fn mark_session_dirty_urgent(&mut self) {
+        self.session_dirty = true;
+        self.session_save_urgent = true;
     }
 
     pub(crate) fn remove_alias_shadowed_by_new_pane(&mut self, pane_id: PaneId) {
@@ -1105,6 +1113,7 @@ impl AppState {
             host_terminal_theme: TerminalTheme::default(),
             host_cell_size: crate::kitty_graphics::HostCellSize::default(),
             session_dirty: false,
+            session_save_urgent: false,
             terminal_runtime_shutdowns: Vec::new(),
         }
     }

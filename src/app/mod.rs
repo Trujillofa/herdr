@@ -525,6 +525,7 @@ impl App {
             host_terminal_theme: crate::terminal_theme::TerminalTheme::default(),
             host_cell_size: crate::kitty_graphics::HostCellSize::default(),
             session_dirty: false,
+            session_save_urgent: false,
             terminal_runtime_shutdowns: Vec::new(),
         };
 
@@ -2995,6 +2996,57 @@ mod tests {
 
         assert!(!app.state.session_dirty);
         assert!(app.session_save_deadline.is_some());
+    }
+
+    #[test]
+    fn session_ref_changed_schedules_immediate_save_and_keeps_sooner_deadline() {
+        let mut app = test_app();
+        app.policy.persist_session = true;
+        app.state.workspaces = vec![Workspace::test_new("save")];
+        app.state.ensure_test_terminals();
+        let pane_id = app.state.workspaces[0].tabs[0].root_pane;
+        let session_path = std::env::current_dir()
+            .expect("cwd")
+            .join("urgent-session.jsonl")
+            .display()
+            .to_string();
+
+        app.state.handle_app_event(AppEvent::HookStateReported {
+            pane_id,
+            source: "custom:pi".into(),
+            agent_label: "pi".into(),
+            state: AgentState::Working,
+            message: None,
+            seq: Some(1),
+            session_ref: crate::agent_resume::AgentSessionRef::path(session_path),
+        });
+
+        assert!(app.state.session_dirty);
+        assert!(
+            app.state.session_save_urgent,
+            "session_ref_changed must mark the next save urgent"
+        );
+
+        let before = Instant::now();
+        app.sync_session_save_schedule();
+        let after = Instant::now();
+        let deadline = app
+            .session_save_deadline
+            .expect("urgent session-id save should be scheduled");
+        assert!(
+            deadline >= before && deadline <= after,
+            "urgent save must use now, not the {SESSION_SAVE_DEBOUNCE:?} debounce"
+        );
+        assert!(!app.state.session_dirty);
+        assert!(!app.state.session_save_urgent);
+
+        app.state.mark_session_dirty();
+        app.sync_session_save_schedule();
+        assert_eq!(
+            app.session_save_deadline,
+            Some(deadline),
+            "non-urgent dirty must not push an already-sooner deadline later"
+        );
     }
 
     #[test]

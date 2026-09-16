@@ -1730,7 +1730,9 @@ impl AppState {
                 suppress_acquisition_completion,
             )
         };
-        if mutation.session_ref_changed || managed_changed || agent_name_changed {
+        if mutation.session_ref_changed {
+            self.mark_session_dirty_urgent();
+        } else if managed_changed || agent_name_changed {
             self.mark_session_dirty();
         }
         let agent_released = mutation.agent_released;
