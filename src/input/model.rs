@@ -1,6 +1,6 @@
 #[cfg(not(windows))]
 use crossterm::event::KeyboardEnhancementFlags;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventState, KeyModifiers};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -79,6 +79,7 @@ pub struct TerminalKey {
     pub generated_text: Option<String>,
     physical_identity_hint: bool,
     windows_dead_key: bool,
+    pub caps_lock: bool,
     source: KeySource,
 }
 
@@ -93,8 +94,14 @@ impl TerminalKey {
             generated_text: None,
             physical_identity_hint: false,
             windows_dead_key: false,
+            caps_lock: false,
             source: KeySource::Synthesized,
         }
+    }
+
+    pub fn with_caps_lock(mut self, caps_lock: bool) -> Self {
+        self.caps_lock = caps_lock;
+        self
     }
 
     pub fn with_kind(mut self, kind: crossterm::event::KeyEventKind) -> Self {
@@ -247,13 +254,19 @@ impl TerminalKey {
     }
 
     pub fn as_key_event(&self) -> KeyEvent {
-        KeyEvent::new_with_kind(self.code, self.modifiers, self.kind)
+        let mut event = KeyEvent::new_with_kind(self.code, self.modifiers, self.kind);
+        if self.caps_lock {
+            event.state |= KeyEventState::CAPS_LOCK;
+        }
+        event
     }
 }
 
 impl From<KeyEvent> for TerminalKey {
     fn from(value: KeyEvent) -> Self {
-        Self::new(value.code, value.modifiers).with_kind(value.kind)
+        Self::new(value.code, value.modifiers)
+            .with_kind(value.kind)
+            .with_caps_lock(value.state.contains(KeyEventState::CAPS_LOCK))
     }
 }
 

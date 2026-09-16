@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Fixed
+- Caps Lock now applies to letters typed into panes when the host terminal reports it through the kitty keyboard protocol, instead of sending lowercase letters.
+
 ## [0.9.0] - 2026-09-07
 
 ### Added
